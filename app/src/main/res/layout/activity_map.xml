@@ -46,6 +46,8 @@
         android:id="@+id/overlayUi"
         android:layout_width="0dp"
         android:layout_height="0dp"
+        android:clipChildren="false"
+        android:clipToPadding="false"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -159,6 +161,8 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="12dp"
             android:layout_marginBottom="12dp"
+            android:clipChildren="false"
+            android:clipToPadding="false"
             android:visibility="gone"
             app:cardBackgroundColor="#3F5B52"
             app:cardCornerRadius="18dp"
@@ -171,8 +175,13 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:clipChildren="false"
+                android:clipToPadding="false"
                 android:orientation="vertical"
-                android:padding="14dp">
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:paddingTop="18dp"
+                android:paddingBottom="18dp">
 
                 <TextView
                     android:id="@+id/pinPickerTitle"
@@ -192,6 +201,8 @@
                     android:id="@+id/pinPickerGrid"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:clipChildren="false"
+                    android:clipToPadding="false"
                     app:columnCount="6"
                     app:rowCount="1">
 

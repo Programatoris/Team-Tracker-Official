@@ -79,7 +79,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             MediaType.get("application/json; charset=utf-8");
 
     private static final int COLOR_ELIMINATED = Color.parseColor("#D62828");
-    private static final int COLOR_ACTIVE = Color.parseColor("#2E7D32");
     private static final int COLOR_DEFAULT_CHIP = Color.parseColor("#354e46");
 
     private GoogleMap map;
@@ -102,11 +101,11 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private int selectedPinColor = Color.RED;
     private View sessionCard;
 
-    private ImageButton btnEye, btnMenu, btnPlusPins, btnCenterMap;
-    private ImageButton pinHouse, pinFlag, pinStar, pinSkull, pinTarget, pinPlus;
-    private ImageButton btnEliminated;
-
+    private MaterialCardView eyeChip;
     private MaterialCardView eliminatedChip;
+
+    private ImageButton btnEye, btnMenu, btnPlusPins, btnCenterMap, btnEliminated;
+    private ImageButton pinHouse, pinFlag, pinStar, pinSkull, pinTarget, pinPlus;
 
     private TextView txtSessionId;
     private View btnLeave;
@@ -159,6 +158,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
         bindViews();
         applyEliminatedButtonState();
+        applyEyeButtonState();
         setupUI();
         enableFullscreen();
 
@@ -226,12 +226,14 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         sessionCard = findViewById(R.id.sessionCard);
         overlayUi = findViewById(R.id.overlayUi);
 
+        eyeChip = findViewById(R.id.eyeChip);
+        eliminatedChip = findViewById(R.id.eliminatedChip);
+
         btnEye = findViewById(R.id.btnEye);
         btnMenu = findViewById(R.id.btnMenu);
         btnPlusPins = findViewById(R.id.btnPlusPins);
         btnCenterMap = findViewById(R.id.btnCenterMap);
         btnEliminated = findViewById(R.id.btnEliminated);
-        eliminatedChip = findViewById(R.id.eliminatedChip);
 
         pinHouse = findViewById(R.id.pinHouse);
         pinFlag = findViewById(R.id.pinFlag);
@@ -319,6 +321,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private void setupUI() {
         btnEye.setOnClickListener(v -> {
             uiVisible = !uiVisible;
+            applyEyeButtonState();
             applyUiVisibility(uiVisible);
             applyMarkersVisibility(uiVisible);
 
@@ -385,7 +388,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         placingPin = true;
 
         clearPinSelectionHighlight();
-
         selectedPinButton = button;
         applyPinSelectionHighlight(selectedPinButton);
     }
@@ -456,6 +458,11 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private void applyEliminatedButtonState() {
         if (eliminatedChip == null) return;
         eliminatedChip.setCardBackgroundColor(isEliminated ? COLOR_ELIMINATED : COLOR_DEFAULT_CHIP);
+    }
+
+    private void applyEyeButtonState() {
+        if (eyeChip == null) return;
+        eyeChip.setCardBackgroundColor(uiVisible ? COLOR_DEFAULT_CHIP : COLOR_ELIMINATED);
     }
 
     private BitmapDescriptor getMyMarkerIcon() {
