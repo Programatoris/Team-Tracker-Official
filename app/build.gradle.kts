@@ -17,7 +17,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        manifestPlaceholders["MAPS_API_KEY"] = "<-- Place your API KEY here -->"
+        manifestPlaceholders["MAPS_API_KEY"] = "<-- Insert your API KEY here -->"
     }
 
     buildTypes {
@@ -46,4 +46,5 @@ dependencies {
     androidTestImplementation(libs.espresso.core)
     implementation("com.google.android.gms:play-services-location:21.0.1")
     implementation("androidx.gridlayout:gridlayout:1.0.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }

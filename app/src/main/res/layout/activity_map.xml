@@ -173,8 +173,8 @@
                     android:id="@+id/pinPickerGrid"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:columnCount="6"
-                    android:rowCount="1">
+                    app:columnCount="6"
+                    app:rowCount="1">
 
                     <ImageButton
                         android:id="@+id/pinHouse"

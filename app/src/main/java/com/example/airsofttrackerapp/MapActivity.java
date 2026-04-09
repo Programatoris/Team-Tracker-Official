@@ -7,22 +7,24 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.location.Location;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.widget.EditText;
 import android.widget.ImageButton;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import androidx.appcompat.content.res.AppCompatResources;
-import android.widget.LinearLayout;
-
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.content.res.AppCompatResources;
 import androidx.core.app.ActivityCompat;
 import androidx.core.graphics.drawable.DrawableCompat;
 
@@ -41,21 +43,36 @@ import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.InetAddress;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import android.graphics.drawable.GradientDrawable;
-import android.widget.ScrollView;
+import java.util.concurrent.TimeUnit;
+
+import okhttp3.Call;
+import okhttp3.Callback;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 
 public class MapActivity extends AppCompatActivity implements OnMapReadyCallback {
 
     private static final int REQ_LOCATION = 1001;
-    private static final int PORT = 4445;
+
+    // ZMEN NA SVOJU FUNKCNU DOMENU / SUBDOMENU
+    private static final String BASE_URL = "https://rpi.mapairsofttracker.org";
+
+    private static final MediaType JSON =
+            MediaType.get("application/json; charset=utf-8");
 
     // Map & GPS
     private GoogleMap map;
@@ -69,7 +86,8 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private final List<Marker> customPins = new ArrayList<>();
 
     // Networking
-    private DatagramSocket socket;
+    private OkHttpClient httpClient;
+    private Handler pollHandler;
     private String sessionId;
     private String playerId;
     private String playerName;
@@ -77,7 +95,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     // UI
     private View pinPickerCard;
     private View overlayUi;
-    private int selectedPinColor = Color.RED; // default
+    private int selectedPinColor = Color.RED;
     private View sessionCard;
 
     private ImageButton btnEye, btnMenu, btnPlusPins, btnCenterMap;
@@ -92,6 +110,16 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private int selectedPinIconRes = 0;
     private boolean sessionMenuExpanded = false;
 
+    private final Runnable pollRunnable = new Runnable() {
+        @Override
+        public void run() {
+            fetchOtherPlayers();
+            if (pollHandler != null) {
+                pollHandler.postDelayed(this, 1000);
+            }
+        }
+    };
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -99,7 +127,24 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
         sessionId = getIntent().getStringExtra("session");
         playerName = getIntent().getStringExtra("name");
+
+        if (sessionId == null || sessionId.trim().isEmpty()) {
+            sessionId = "test123";
+        }
+
+        if (playerName == null || playerName.trim().isEmpty()) {
+            playerName = "Player";
+        }
+
         playerId = UUID.randomUUID().toString();
+
+        httpClient = new OkHttpClient.Builder()
+                .connectTimeout(5, TimeUnit.SECONDS)
+                .readTimeout(5, TimeUnit.SECONDS)
+                .writeTimeout(5, TimeUnit.SECONDS)
+                .build();
+
+        pollHandler = new Handler(getMainLooper());
 
         bindViews();
         setupUI();
@@ -107,9 +152,12 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
         SupportMapFragment mapFragment =
                 (SupportMapFragment) getSupportFragmentManager().findFragmentById(R.id.map);
-        if (mapFragment != null) mapFragment.getMapAsync(this);
+        if (mapFragment != null) {
+            mapFragment.getMapAsync(this);
+        }
 
-        startNetworking();
+        joinSessionHttp();
+        startPolling();
         checkLocationPermission();
 
         View root = findViewById(android.R.id.content);
@@ -132,8 +180,9 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         if (locationClient != null && locationCallback != null) {
             locationClient.removeLocationUpdates(locationCallback);
         }
-        if (socket != null && !socket.isClosed()) {
-            socket.close();
+
+        if (pollHandler != null) {
+            pollHandler.removeCallbacksAndMessages(null);
         }
     }
 
@@ -157,13 +206,9 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         txtSessionId = findViewById(R.id.txtSessionId);
         btnLeave = findViewById(R.id.btnLeave);
 
-        if (sessionId == null) sessionId = "Unknown";
         txtSessionId.setText("Session ID: " + sessionId);
     }
 
-    // =========================
-    // MAP
-    // =========================
     @Override
     public void onMapReady(@NonNull GoogleMap googleMap) {
         map = googleMap;
@@ -184,13 +229,12 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         map.getUiSettings().setIndoorLevelPickerEnabled(false);
 
         map.setOnMarkerClickListener(marker -> {
-            // Only allow delete flow for custom pins (not you / not other players)
             if (customPins.contains(marker)) {
-                marker.showInfoWindow(); // user will long-press the bubble to delete
+                marker.showInfoWindow();
                 pendingDeleteMarker = marker;
-                return true; // consume click
+                return true;
             }
-            return false; // default behavior for other markers
+            return false;
         });
 
         map.setOnInfoWindowLongClickListener(marker -> {
@@ -207,22 +251,16 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
     private void deleteCustomPin(Marker marker) {
         if (marker == null) return;
-
-        // Remove from map
         marker.remove();
-
-        // Remove from list
         customPins.remove(marker);
 
-        if (pendingDeleteMarker == marker) pendingDeleteMarker = null;
+        if (pendingDeleteMarker == marker) {
+            pendingDeleteMarker = null;
+        }
     }
 
-    // =========================
-    // UI
-    // =========================
     private void enableFullscreen() {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-            // Android 11+
             getWindow().setDecorFitsSystemWindows(false);
 
             WindowInsetsController controller = getWindow().getInsetsController();
@@ -233,7 +271,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                 );
             }
         } else {
-            // Android 10 and below
             getWindow().getDecorView().setSystemUiVisibility(
                     View.SYSTEM_UI_FLAG_FULLSCREEN
                             | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
@@ -243,7 +280,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     }
 
     private void setupUI() {
-
         btnEye.setOnClickListener(v -> {
             uiVisible = !uiVisible;
             applyUiVisibility(uiVisible);
@@ -302,8 +338,11 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     }
 
     private void togglePinPicker() {
-        if (pinPickerCard.getVisibility() == View.VISIBLE) hidePinPicker();
-        else showPinPicker();
+        if (pinPickerCard.getVisibility() == View.VISIBLE) {
+            hidePinPicker();
+        } else {
+            showPinPicker();
+        }
     }
 
     private void showPinPicker() {
@@ -315,13 +354,10 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     }
 
     private void applyUiVisibility(boolean visible) {
-
-        // Hide/show ALL green UI except the eye button
         if (overlayUi != null) {
             overlayUi.setVisibility(visible ? View.VISIBLE : View.GONE);
         }
 
-        // When hiding UI, also clean up state
         if (!visible) {
             hidePinPicker();
             sessionMenuExpanded = false;
@@ -332,13 +368,14 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
     private void applyMarkersVisibility(boolean visible) {
         if (myMarker != null) myMarker.setVisible(visible);
-        for (Marker m : otherPlayers.values()) if (m != null) m.setVisible(visible);
-        for (Marker m : customPins) if (m != null) m.setVisible(visible);
+        for (Marker m : otherPlayers.values()) {
+            if (m != null) m.setVisible(visible);
+        }
+        for (Marker m : customPins) {
+            if (m != null) m.setVisible(visible);
+        }
     }
 
-    // =========================
-    // PIN DIALOG
-    // =========================
     private void showPinNameDialog(LatLng pos) {
         if (map == null) return;
         if (selectedPinIconRes == 0) return;
@@ -346,30 +383,27 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         float density = getResources().getDisplayMetrics().density;
         int pad = Math.round(16 * density);
 
-        // Scroll container (safe on small screens)
         ScrollView scroll = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(pad, pad, pad, pad);
         scroll.addView(root);
 
-        // Name input
         EditText etName = new EditText(this);
         etName.setHint("Pin name");
         root.addView(etName);
 
-        // Spacer
         View spacer1 = new View(this);
         spacer1.setLayoutParams(new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, Math.round(12 * density)));
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                Math.round(12 * density)
+        ));
         root.addView(spacer1);
 
-        // Label
         TextView label = new TextView(this);
         label.setText("Pick a color");
         root.addView(label);
 
-        // Color row container
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
@@ -380,20 +414,18 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         row.setLayoutParams(rowLp);
         root.addView(row);
 
-        // Colors you want (add more if you like)
-        final int[] colors = new int[] {
+        final int[] colors = new int[]{
                 Color.RED,
                 Color.BLUE,
                 Color.GREEN,
                 Color.YELLOW,
-                Color.MAGENTA, // purple-ish
+                Color.MAGENTA,
                 Color.CYAN,
                 Color.WHITE,
                 Color.BLACK
         };
 
-        // We'll store the chosen color here
-        final int[] chosenColor = new int[] { selectedPinColor };
+        final int[] chosenColor = new int[]{selectedPinColor};
 
         int circleSize = Math.round(34 * density);
         int circleMargin = Math.round(8 * density);
@@ -407,30 +439,31 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             GradientDrawable bg = new GradientDrawable();
             bg.setShape(GradientDrawable.OVAL);
             bg.setColor(c);
-
-            // Default border (unselected)
             bg.setStroke(Math.round(1.5f * density), Color.parseColor("#66000000"));
-
             swatch.setBackground(bg);
 
-            // Selection ring
             swatch.setOnClickListener(v -> {
                 chosenColor[0] = c;
 
-                // reset all borders, then highlight selected
                 for (int i = 0; i < row.getChildCount(); i++) {
                     View child = row.getChildAt(i);
                     Drawable d = child.getBackground();
                     if (d instanceof GradientDrawable) {
-                        ((GradientDrawable) d).setStroke(Math.round(1.5f * density), Color.parseColor("#66000000"));
+                        ((GradientDrawable) d).setStroke(
+                                Math.round(1.5f * density),
+                                Color.parseColor("#66000000")
+                        );
                     }
                 }
-                ((GradientDrawable) swatch.getBackground()).setStroke(Math.round(3f * density), Color.WHITE);
+
+                ((GradientDrawable) swatch.getBackground()).setStroke(
+                        Math.round(3f * density),
+                        Color.WHITE
+                );
             });
 
             row.addView(swatch);
 
-            // Preselect previously chosen color
             if (c == selectedPinColor) {
                 bg.setStroke(Math.round(3f * density), Color.WHITE);
             }
@@ -445,13 +478,13 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
                     selectedPinColor = chosenColor[0];
 
-                    int pinSizeDp = 34; // keep it small; tweak 24–32
+                    int pinSizeDp = 34;
                     Marker m = map.addMarker(new MarkerOptions()
                             .position(pos)
                             .title(name)
                             .icon(tintedPinIcon(selectedPinIconRes, selectedPinColor, pinSizeDp))
                             .anchor(0.5f, 1.0f)
-                            .flat(false) // billboard is OK
+                            .flat(false)
                     );
 
                     if (m != null) {
@@ -463,33 +496,10 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                 .show();
     }
 
-    private BitmapDescriptor getScaledDescriptorKeepAspect(int drawableRes, int targetDp) {
-        Drawable d = AppCompatResources.getDrawable(this, drawableRes);
-        if (d == null) return BitmapDescriptorFactory.defaultMarker();
-
-        float density = getResources().getDisplayMetrics().density;
-        int targetPx = Math.round(targetDp * density);
-
-        int iw = d.getIntrinsicWidth() > 0 ? d.getIntrinsicWidth() : targetPx;
-        int ih = d.getIntrinsicHeight() > 0 ? d.getIntrinsicHeight() : targetPx;
-
-        float scale = Math.min((float) targetPx / iw, (float) targetPx / ih);
-        int w = Math.round(iw * scale);
-        int h = Math.round(ih * scale);
-
-        Bitmap b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
-        Canvas c = new Canvas(b);
-        d.setBounds(0, 0, w, h);
-        d.draw(c);
-
-        return BitmapDescriptorFactory.fromBitmap(b);
-    }
-
     private BitmapDescriptor tintedPinIcon(int drawableRes, int color, int sizeDp) {
         Drawable d = AppCompatResources.getDrawable(this, drawableRes);
         if (d == null) return BitmapDescriptorFactory.defaultMarker();
 
-        // Wrap so tint works on all drawable types
         d = DrawableCompat.wrap(d).mutate();
         DrawableCompat.setTint(d, color);
 
@@ -511,17 +521,17 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         return BitmapDescriptorFactory.fromBitmap(b);
     }
 
-    // =========================
-    // PERMISSIONS
-    // =========================
     private void checkLocationPermission() {
-        if (ActivityCompat.checkSelfPermission(this,
-                Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+        ) != PackageManager.PERMISSION_GRANTED) {
 
             ActivityCompat.requestPermissions(
                     this,
                     new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
-                    REQ_LOCATION);
+                    REQ_LOCATION
+            );
         } else {
             startLiveTracking();
         }
@@ -533,16 +543,13 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                                            @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
-        if (requestCode == REQ_LOCATION &&
-                grantResults.length > 0 &&
-                grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+        if (requestCode == REQ_LOCATION
+                && grantResults.length > 0
+                && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             startLiveTracking();
         }
     }
 
-    // =========================
-    // LIVE GPS
-    // =========================
     private void startLiveTracking() {
         locationClient = LocationServices.getFusedLocationProviderClient(this);
 
@@ -570,15 +577,26 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                     myMarker.setPosition(pos);
                 }
 
-                if (myMarker != null) myMarker.setVisible(uiVisible);
+                if (myMarker != null) {
+                    myMarker.setVisible(uiVisible);
+                }
+
                 sendLocation(loc.getLatitude(), loc.getLongitude());
             }
         };
 
-        if (ActivityCompat.checkSelfPermission(this,
-                Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return;
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+        ) != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
 
-        locationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper());
+        locationClient.requestLocationUpdates(
+                request,
+                locationCallback,
+                Looper.getMainLooper()
+        );
     }
 
     private void centerMapOnMe() {
@@ -594,37 +612,161 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         }
     }
 
-    // =========================
-    // NETWORKING
-    // =========================
-    private void startNetworking() {
-        new Thread(() -> {
-            try {
-                socket = new DatagramSocket(PORT);
-                socket.setBroadcast(true);
+    private void startPolling() {
+        if (pollHandler != null) {
+            pollHandler.post(pollRunnable);
+        }
+    }
 
-                while (true) {
-                    byte[] buffer = new byte[256];
-                    DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-                    socket.receive(packet);
+    private void joinSessionHttp() {
+        try {
+            JSONObject json = new JSONObject();
+            json.put("session_id", sessionId);
+            json.put("player_id", playerId);
+            json.put("player_name", playerName);
 
-                    String msg = new String(packet.getData()).trim();
-                    String[] p = msg.split(",");
+            RequestBody body = RequestBody.create(json.toString(), JSON);
 
-                    if (p.length < 5) continue;
-                    if (!p[0].equals(sessionId)) continue;
-                    if (p[1].equals(playerId)) continue;
+            Request request = new Request.Builder()
+                    .url(BASE_URL + "/api/session/join")
+                    .post(body)
+                    .build();
 
-                    String otherName = p[2];
-                    double lat = Double.parseDouble(p[3]);
-                    double lng = Double.parseDouble(p[4]);
-
-                    runOnUiThread(() -> updateOtherPlayer(p[1], otherName, lat, lng));
+            httpClient.newCall(request).enqueue(new Callback() {
+                @Override
+                public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                    e.printStackTrace();
+                    runOnUiThread(() ->
+                            Toast.makeText(MapActivity.this, "Join failed", Toast.LENGTH_SHORT).show()
+                    );
                 }
-            } catch (Exception e) {
-                e.printStackTrace();
+
+                @Override
+                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                    response.close();
+                }
+            });
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void sendLocation(double lat, double lng) {
+        try {
+            JSONObject json = new JSONObject();
+            json.put("session_id", sessionId);
+            json.put("player_id", playerId);
+            json.put("player_name", playerName);
+            json.put("lat", lat);
+            json.put("lng", lng);
+
+            RequestBody body = RequestBody.create(json.toString(), JSON);
+
+            Request request = new Request.Builder()
+                    .url(BASE_URL + "/api/location/update")
+                    .post(body)
+                    .build();
+
+            httpClient.newCall(request).enqueue(new Callback() {
+                @Override
+                public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                    e.printStackTrace();
+                }
+
+                @Override
+                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                    response.close();
+                }
+            });
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void fetchOtherPlayers() {
+        try {
+            String url = BASE_URL
+                    + "/api/locations?session_id="
+                    + URLEncoder.encode(sessionId, StandardCharsets.UTF_8.toString())
+                    + "&player_id="
+                    + URLEncoder.encode(playerId, StandardCharsets.UTF_8.toString());
+
+            Request request = new Request.Builder()
+                    .url(url)
+                    .get()
+                    .build();
+
+            httpClient.newCall(request).enqueue(new Callback() {
+                @Override
+                public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                    e.printStackTrace();
+                }
+
+                @Override
+                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                    if (!response.isSuccessful()) {
+                        response.close();
+                        return;
+                    }
+
+                    String body = response.body() != null ? response.body().string() : "";
+                    response.close();
+
+                    try {
+                        JSONObject root = new JSONObject(body);
+                        JSONArray arr = root.getJSONArray("players");
+
+                        runOnUiThread(() -> {
+                            try {
+                                syncPlayers(arr);
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                            }
+                        });
+
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+            });
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void syncPlayers(JSONArray arr) throws Exception {
+        if (map == null) return;
+
+        Map<String, Boolean> seen = new HashMap<>();
+
+        for (int i = 0; i < arr.length(); i++) {
+            JSONObject p = arr.getJSONObject(i);
+
+            String id = p.getString("player_id");
+            String name = p.getString("player_name");
+            double lat = p.getDouble("lat");
+            double lng = p.getDouble("lng");
+
+            seen.put(id, true);
+            updateOtherPlayer(id, name, lat, lng);
+        }
+
+        List<String> remove = new ArrayList<>();
+
+        for (String id : otherPlayers.keySet()) {
+            if (!seen.containsKey(id)) {
+                Marker m = otherPlayers.get(id);
+                if (m != null) m.remove();
+                remove.add(id);
             }
-        }).start();
+        }
+
+        for (String id : remove) {
+            otherPlayers.remove(id);
+        }
     }
 
     private void updateOtherPlayer(String id, String name, double lat, double lng) {
@@ -637,7 +779,11 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                     .position(pos)
                     .title(name)
                     .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)));
-            if (m != null) m.setVisible(uiVisible);
+
+            if (m != null) {
+                m.setVisible(uiVisible);
+            }
+
             otherPlayers.put(id, m);
         } else {
             Marker m = otherPlayers.get(id);
@@ -647,25 +793,5 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                 m.setVisible(uiVisible);
             }
         }
-    }
-
-    private void sendLocation(double lat, double lng) {
-        new Thread(() -> {
-            try {
-                String msg = sessionId + "," + playerId + "," + playerName + "," + lat + "," + lng;
-                byte[] data = msg.getBytes();
-
-                DatagramPacket packet = new DatagramPacket(
-                        data,
-                        data.length,
-                        InetAddress.getByName("255.255.255.255"),
-                        PORT
-                );
-
-                if (socket != null) socket.send(packet);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }).start();
     }
 }
