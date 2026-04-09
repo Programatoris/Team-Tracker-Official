@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">Team Tracker</string>
+    <string name="eye">Toggle visibility</string>
+    <string name="alert">Alerts</string>
+    <string name="mail">Messages</string>
+    <string name="add_pin">Add pin</string>
+    <string name="menu">Menu</string>
+    <string name="center_map">My Location</string>
+</resources>

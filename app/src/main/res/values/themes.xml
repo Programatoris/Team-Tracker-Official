@@ -1,0 +1,18 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Base application theme -->
+    <style name="Base.Theme.AirsoftTrackerApp" parent="Theme.Material3.DayNight.NoActionBar">
+
+        <!-- Primary accent (buttons, dialog actions, focus, ripple) -->
+        <item name="colorPrimary">#ff9d00</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+
+        <!-- Secondary (keep same gray for consistency) -->
+        <item name="colorSecondary">#F5A623</item>
+        <item name="colorOnSecondary">@android:color/white</item>
+
+    </style>
+
+    <style name="Theme.AirsoftTrackerApp" parent="Base.Theme.AirsoftTrackerApp" />
+
+</resources>

@@ -1,0 +1,4 @@
+- zobrazovat nazvy hracov
+- osetrit join ked neexistuje session ID
+- vylepsit pridavanie ikoniek na mapu
+- satelitna snimka?

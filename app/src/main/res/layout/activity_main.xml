@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#354e46"
+    android:padding="24dp"
+    tools:context=".MainActivity">
+
+    <!-- A few "friend dots" on the radar -->
+    <View
+        android:id="@+id/gridOverlay"
+        android:layout_width="698dp"
+        android:layout_height="383dp"
+        android:alpha="0.10"
+        android:background="@drawable/bg_grid_overlay"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.466"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_bias="0.6" />
+
+    <View
+        android:id="@+id/radar"
+        android:layout_width="330dp"
+        android:layout_height="330dp"
+        android:alpha="0.22"
+        android:background="@drawable/bg_radar_rings"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.832"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_bias="0.484" />
+
+    <View
+        android:layout_width="10dp"
+        android:layout_height="10dp"
+        android:alpha="0.9"
+        android:background="@drawable/bg_friend_dot"
+        app:layout_constraintTop_toTopOf="@id/radar"
+        app:layout_constraintStart_toStartOf="@id/radar"
+        android:layout_marginTop="74dp"
+        android:layout_marginStart="150dp"/>
+
+    <!-- Center dot -->
+
+    <View
+        android:id="@+id/view"
+        android:layout_width="8dp"
+        android:layout_height="8dp"
+        android:layout_marginStart="88dp"
+        android:layout_marginTop="140dp"
+        android:alpha="0.7"
+        android:background="@drawable/bg_friend_dot"
+        app:layout_constraintStart_toStartOf="@id/radar"
+        app:layout_constraintTop_toTopOf="@id/radar" />
+
+    <View
+        android:layout_width="6dp"
+        android:layout_height="6dp"
+        android:layout_marginStart="116dp"
+        android:layout_marginTop="168dp"
+        android:alpha="0.85"
+        android:background="@drawable/bg_friend_dot"
+        app:layout_constraintStart_toStartOf="@id/radar"
+        app:layout_constraintTop_toTopOf="@id/radar" />
+
+    <View
+        android:id="@+id/radarCenterDot"
+        android:layout_width="8dp"
+        android:layout_height="8dp"
+        android:alpha="0.85"
+        android:background="@drawable/bg_center_dot"
+        app:layout_constraintStart_toStartOf="@id/radar"
+        app:layout_constraintEnd_toEndOf="@id/radar"
+        app:layout_constraintTop_toTopOf="@id/radar"
+        app:layout_constraintBottom_toBottomOf="@id/radar"/>
+
+    <!-- Radar sweep line (center -> edge) -->
+
+    <!-- Title -->
+
+    <ImageView
+        android:id="@+id/radarArm"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:alpha="0.85"
+        android:src="@drawable/bg_radar_line"
+        app:layout_constraintBottom_toBottomOf="@id/radar"
+        app:layout_constraintEnd_toEndOf="@id/radar"
+        app:layout_constraintHorizontal_bias="1.0"
+        app:layout_constraintStart_toStartOf="@id/radar"
+        app:layout_constraintTop_toTopOf="@id/radar"
+        app:layout_constraintVertical_bias="0.0" />
+
+    <TextView
+        android:id="@+id/tvTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="TEAM TRACKER"
+        android:textColor="#FFFFFF"
+        android:textSize="44sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.06"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"/>
+
+    <!-- Version -->
+    <TextView
+        android:id="@+id/tvVersion"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Build / App version: v1.01"
+        android:textColor="#CCFFFFFF"
+        android:textSize="14sp"
+        android:letterSpacing="0.02"
+        app:layout_constraintTop_toBottomOf="@id/tvTitle"
+        app:layout_constraintStart_toStartOf="@id/tvTitle"
+        android:layout_marginTop="10dp"/>
+
+    <!-- Bottom "panel" so the button doesn't float in emptiness -->
+
+    <!-- Subtle route line in the bottom panel -->
+
+    <!-- A couple of "pins" on the route -->
+
+    <!-- Begin button (same place, just styled) -->
+
+    <View
+        android:layout_width="12dp"
+        android:layout_height="12dp"
+        android:layout_marginTop="252dp"
+        android:layout_marginEnd="172dp"
+        android:alpha="0.85"
+        android:background="@drawable/bg_pin"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <View
+        android:layout_width="12dp"
+        android:layout_height="12dp"
+        android:layout_marginStart="560dp"
+        android:layout_marginTop="252dp"
+        android:alpha="0.85"
+        android:background="@drawable/bg_pin"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnBegin"
+        android:layout_width="130dp"
+        android:layout_height="48dp"
+        android:text="Begin"
+        android:textAllCaps="false"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.02"
+        android:backgroundTint="#F5A623"
+        android:textColor="#1E1E1E"
+        app:cornerRadius="24dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        android:layout_marginBottom="16dp"/>
+</androidx.constraintlayout.widget.ConstraintLayout>
