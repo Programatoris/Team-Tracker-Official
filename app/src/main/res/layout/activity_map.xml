@@ -7,7 +7,6 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <!-- MAP -->
     <fragment
         android:id="@+id/map"
         android:name="com.google.android.gms.maps.SupportMapFragment"
@@ -18,18 +17,17 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
-    <!-- EYE stays visible -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/eyeChip"
         android:layout_width="52dp"
         android:layout_height="52dp"
         android:layout_marginStart="16dp"
         android:layout_marginTop="16dp"
+        app:cardBackgroundColor="#354e46"
         app:cardCornerRadius="18dp"
         app:cardElevation="6dp"
-        app:cardUseCompatPadding="false"
         app:cardPreventCornerOverlap="true"
-        app:cardBackgroundColor="#354e46"
+        app:cardUseCompatPadding="false"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
 
@@ -44,7 +42,6 @@
             android:src="@drawable/ic_eye" />
     </com.google.android.material.card.MaterialCardView>
 
-    <!-- EVERYTHING that should hide goes in here -->
     <androidx.constraintlayout.widget.ConstraintLayout
         android:id="@+id/overlayUi"
         android:layout_width="0dp"
@@ -54,18 +51,17 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
-        <!-- MENU -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/menuChip"
             android:layout_width="48dp"
             android:layout_height="48dp"
             android:layout_marginTop="16dp"
             android:layout_marginEnd="16dp"
+            app:cardBackgroundColor="#354e46"
             app:cardCornerRadius="18dp"
             app:cardElevation="6dp"
-            app:cardUseCompatPadding="false"
             app:cardPreventCornerOverlap="true"
-            app:cardBackgroundColor="#354e46"
+            app:cardUseCompatPadding="false"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintTop_toTopOf="parent">
 
@@ -80,18 +76,42 @@
                 android:src="@drawable/ic_menu" />
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- LEFT TOOLBAR -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/eliminatedChip"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="28dp"
+            app:cardBackgroundColor="#354e46"
+            app:cardCornerRadius="18dp"
+            app:cardElevation="6dp"
+            app:cardPreventCornerOverlap="true"
+            app:cardUseCompatPadding="false"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent">
+
+            <ImageButton
+                android:id="@+id/btnEliminated"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@android:color/transparent"
+                android:contentDescription="Eliminated"
+                android:padding="10dp"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_pin_skull" />
+        </com.google.android.material.card.MaterialCardView>
+
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/leftToolbarCard"
             android:layout_width="64dp"
             android:layout_height="wrap_content"
             android:layout_marginStart="16dp"
             android:layout_marginBottom="28dp"
+            app:cardBackgroundColor="#354e46"
             app:cardCornerRadius="24dp"
             app:cardElevation="8dp"
-            app:cardUseCompatPadding="false"
             app:cardPreventCornerOverlap="true"
-            app:cardBackgroundColor="#354e46"
+            app:cardUseCompatPadding="false"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintBottom_toBottomOf="parent">
 
@@ -133,7 +153,6 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- PIN PICKER (not full width anymore) -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/pinPickerCard"
             android:layout_width="320dp"
@@ -141,11 +160,11 @@
             android:layout_marginStart="12dp"
             android:layout_marginBottom="12dp"
             android:visibility="gone"
+            app:cardBackgroundColor="#3F5B52"
             app:cardCornerRadius="18dp"
             app:cardElevation="12dp"
-            app:cardUseCompatPadding="false"
             app:cardPreventCornerOverlap="true"
-            app:cardBackgroundColor="#3F5B52"
+            app:cardUseCompatPadding="false"
             app:layout_constraintStart_toEndOf="@id/leftToolbarCard"
             app:layout_constraintBottom_toBottomOf="@id/leftToolbarCard">
 
@@ -159,11 +178,11 @@
                     android:id="@+id/pinPickerTitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:alpha="0.95"
                     android:text="Add a pin"
                     android:textColor="#FFFFFF"
-                    android:textStyle="bold"
                     android:textSize="14sp"
-                    android:alpha="0.95" />
+                    android:textStyle="bold" />
 
                 <Space
                     android:layout_width="1dp"
@@ -179,48 +198,53 @@
                     <ImageButton
                         android:id="@+id/pinHouse"
                         style="@style/PinChoiceButton"
+                        android:background="@drawable/pin_picker_default_bg"
                         android:src="@drawable/ic_pin_house" />
 
                     <ImageButton
                         android:id="@+id/pinFlag"
                         style="@style/PinChoiceButton"
+                        android:background="@drawable/pin_picker_default_bg"
                         android:src="@drawable/ic_pin_flag" />
 
                     <ImageButton
                         android:id="@+id/pinStar"
                         style="@style/PinChoiceButton"
+                        android:background="@drawable/pin_picker_default_bg"
                         android:src="@drawable/ic_pin_star" />
 
                     <ImageButton
                         android:id="@+id/pinSkull"
                         style="@style/PinChoiceButton"
+                        android:background="@drawable/pin_picker_default_bg"
                         android:src="@drawable/ic_pin_skull" />
 
                     <ImageButton
                         android:id="@+id/pinTarget"
                         style="@style/PinChoiceButton"
+                        android:background="@drawable/pin_picker_default_bg"
                         android:src="@drawable/ic_pin_target" />
 
                     <ImageButton
                         android:id="@+id/pinPlus"
                         style="@style/PinChoiceButton"
+                        android:background="@drawable/pin_picker_default_bg"
                         android:src="@drawable/ic_pin_plus" />
                 </androidx.gridlayout.widget.GridLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- SESSION CARD (below menu) -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/sessionCard"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
             android:layout_marginEnd="16dp"
+            app:cardBackgroundColor="#3F5B52"
             app:cardCornerRadius="18dp"
             app:cardElevation="8dp"
-            app:cardUseCompatPadding="false"
             app:cardPreventCornerOverlap="true"
-            app:cardBackgroundColor="#3F5B52"
+            app:cardUseCompatPadding="false"
             app:layout_constraintTop_toBottomOf="@id/menuChip"
             app:layout_constraintEnd_toEndOf="parent">
 
@@ -234,11 +258,11 @@
                     android:id="@+id/txtSessionId"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:alpha="0.95"
                     android:text="Session ID: 52s16a87v"
-                    android:textSize="14sp"
                     android:textColor="#FFFFFF"
-                    android:textStyle="bold"
-                    android:alpha="0.95" />
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
 
                 <Space
                     android:layout_width="1dp"

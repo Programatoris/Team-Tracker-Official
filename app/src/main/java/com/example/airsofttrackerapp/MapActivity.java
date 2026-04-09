@@ -42,6 +42,7 @@ import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.material.card.MaterialCardView;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -61,6 +62,7 @@ import okhttp3.Callback;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
+import okhttp3.RequestBody;
 import okhttp3.Response;
 
 public class MapActivity extends AppCompatActivity implements OnMapReadyCallback {
@@ -75,6 +77,10 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private static final String BASE_URL = "https://rpi.mapairsofttracker.org";
     private static final MediaType JSON =
             MediaType.get("application/json; charset=utf-8");
+
+    private static final int COLOR_ELIMINATED = Color.parseColor("#D62828");
+    private static final int COLOR_ACTIVE = Color.parseColor("#2E7D32");
+    private static final int COLOR_DEFAULT_CHIP = Color.parseColor("#354e46");
 
     private GoogleMap map;
     private Marker pendingDeleteMarker = null;
@@ -98,6 +104,9 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
     private ImageButton btnEye, btnMenu, btnPlusPins, btnCenterMap;
     private ImageButton pinHouse, pinFlag, pinStar, pinSkull, pinTarget, pinPlus;
+    private ImageButton btnEliminated;
+
+    private MaterialCardView eliminatedChip;
 
     private TextView txtSessionId;
     private View btnLeave;
@@ -106,6 +115,10 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private boolean placingPin = false;
     private int selectedPinIconRes = 0;
     private boolean sessionMenuExpanded = false;
+    private boolean isEliminated = false;
+    private boolean serverConnectionLost = false;
+
+    private ImageButton selectedPinButton = null;
 
     private final Runnable pollRunnable = new Runnable() {
         @Override
@@ -145,6 +158,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         locationClient = LocationServices.getFusedLocationProviderClient(this);
 
         bindViews();
+        applyEliminatedButtonState();
         setupUI();
         enableFullscreen();
 
@@ -216,6 +230,8 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         btnMenu = findViewById(R.id.btnMenu);
         btnPlusPins = findViewById(R.id.btnPlusPins);
         btnCenterMap = findViewById(R.id.btnCenterMap);
+        btnEliminated = findViewById(R.id.btnEliminated);
+        eliminatedChip = findViewById(R.id.eliminatedChip);
 
         pinHouse = findViewById(R.id.pinHouse);
         pinFlag = findViewById(R.id.pinFlag);
@@ -334,12 +350,19 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             centerMapOnMe();
         });
 
-        pinHouse.setOnClickListener(v -> startPlacingPin(R.drawable.ic_pin_house));
-        pinFlag.setOnClickListener(v -> startPlacingPin(R.drawable.ic_pin_flag));
-        pinStar.setOnClickListener(v -> startPlacingPin(R.drawable.ic_pin_star));
-        pinSkull.setOnClickListener(v -> startPlacingPin(R.drawable.ic_pin_skull));
-        pinTarget.setOnClickListener(v -> startPlacingPin(R.drawable.ic_pin_target));
-        pinPlus.setOnClickListener(v -> startPlacingPin(R.drawable.ic_pin_plus));
+        btnEliminated.setOnClickListener(v -> {
+            isEliminated = !isEliminated;
+            applyEliminatedButtonState();
+            updateMyMarkerAppearance();
+            sendEliminatedStateToServer(isEliminated);
+        });
+
+        pinHouse.setOnClickListener(v -> startPlacingPin((ImageButton) v, R.drawable.ic_pin_house));
+        pinFlag.setOnClickListener(v -> startPlacingPin((ImageButton) v, R.drawable.ic_pin_flag));
+        pinStar.setOnClickListener(v -> startPlacingPin((ImageButton) v, R.drawable.ic_pin_star));
+        pinSkull.setOnClickListener(v -> startPlacingPin((ImageButton) v, R.drawable.ic_pin_skull));
+        pinTarget.setOnClickListener(v -> startPlacingPin((ImageButton) v, R.drawable.ic_pin_target));
+        pinPlus.setOnClickListener(v -> startPlacingPin((ImageButton) v, R.drawable.ic_pin_plus));
 
         hidePinPicker();
         sessionMenuExpanded = false;
@@ -355,10 +378,39 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         sessionCard.setVisibility(expanded ? View.VISIBLE : View.GONE);
     }
 
-    private void startPlacingPin(int iconRes) {
+    private void startPlacingPin(ImageButton button, int iconRes) {
         if (!uiVisible) return;
+
         selectedPinIconRes = iconRes;
         placingPin = true;
+
+        clearPinSelectionHighlight();
+
+        selectedPinButton = button;
+        applyPinSelectionHighlight(selectedPinButton);
+    }
+
+    private void applyPinSelectionHighlight(ImageButton button) {
+        if (button == null) return;
+
+        button.setBackgroundResource(R.drawable.pin_picker_selected_bg);
+        button.animate()
+                .scaleX(1.12f)
+                .scaleY(1.12f)
+                .setDuration(120)
+                .start();
+    }
+
+    private void clearPinSelectionHighlight() {
+        if (selectedPinButton != null) {
+            selectedPinButton.setBackgroundResource(R.drawable.pin_picker_default_bg);
+            selectedPinButton.animate()
+                    .scaleX(1f)
+                    .scaleY(1f)
+                    .setDuration(120)
+                    .start();
+            selectedPinButton = null;
+        }
     }
 
     private void togglePinPicker() {
@@ -375,6 +427,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
     private void hidePinPicker() {
         pinPickerCard.setVisibility(View.GONE);
+        clearPinSelectionHighlight();
     }
 
     private void applyUiVisibility(boolean visible) {
@@ -397,6 +450,29 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         }
         for (Marker m : customPins) {
             if (m != null) m.setVisible(visible);
+        }
+    }
+
+    private void applyEliminatedButtonState() {
+        if (eliminatedChip == null) return;
+        eliminatedChip.setCardBackgroundColor(isEliminated ? COLOR_ELIMINATED : COLOR_DEFAULT_CHIP);
+    }
+
+    private BitmapDescriptor getMyMarkerIcon() {
+        return BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE);
+    }
+
+    private BitmapDescriptor getOtherPlayerIcon(boolean eliminated) {
+        if (eliminated) {
+            return BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED);
+        }
+        return BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN);
+    }
+
+    private void updateMyMarkerAppearance() {
+        if (myMarker != null) {
+            myMarker.setIcon(getMyMarkerIcon());
+            myMarker.setAlpha(isEliminated ? 0.75f : 1f);
         }
     }
 
@@ -515,8 +591,10 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                         m.setVisible(uiVisible);
                         customPins.add(m);
                     }
+
+                    clearPinSelectionHighlight();
                 })
-                .setNegativeButton("Cancel", null)
+                .setNegativeButton("Cancel", (d, w) -> clearPinSelectionHighlight())
                 .show();
     }
 
@@ -635,9 +713,14 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                         myMarker = map.addMarker(new MarkerOptions()
                                 .position(me)
                                 .title("Me")
-                                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE)));
+                                .icon(getMyMarkerIcon()));
+                        if (myMarker != null) {
+                            myMarker.setAlpha(isEliminated ? 0.75f : 1f);
+                        }
                     } else {
                         myMarker.setPosition(me);
+                        myMarker.setIcon(getMyMarkerIcon());
+                        myMarker.setAlpha(isEliminated ? 0.75f : 1f);
                     }
 
                     map.animateCamera(CameraUpdateFactory.newLatLngZoom(me, 17f));
@@ -669,12 +752,14 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                 @Override
                 public void onFailure(@NonNull Call call, @NonNull IOException e) {
                     e.printStackTrace();
+                    showWaitingForServerOnce();
                 }
 
                 @Override
                 public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
                     if (!response.isSuccessful()) {
                         response.close();
+                        showWaitingForServerOnce();
                         return;
                     }
 
@@ -684,6 +769,8 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                     try {
                         JSONObject root = new JSONObject(body);
                         JSONArray arr = root.getJSONArray("players");
+
+                        markServerConnected();
 
                         runOnUiThread(() -> {
                             try {
@@ -695,12 +782,14 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
                     } catch (Exception e) {
                         e.printStackTrace();
+                        showWaitingForServerOnce();
                     }
                 }
             });
 
         } catch (Exception e) {
             e.printStackTrace();
+            showWaitingForServerOnce();
         }
     }
 
@@ -716,9 +805,10 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             String name = p.getString("player_name");
             double lat = p.getDouble("lat");
             double lng = p.getDouble("lng");
+            boolean eliminated = p.optBoolean("is_eliminated", false);
 
             seen.put(id, true);
-            updateOtherPlayer(id, name, lat, lng);
+            updateOtherPlayer(id, name, lat, lng, eliminated);
         }
 
         List<String> remove = new ArrayList<>();
@@ -736,20 +826,21 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         }
     }
 
-    private void updateOtherPlayer(String id, String name, double lat, double lng) {
+    private void updateOtherPlayer(String id, String name, double lat, double lng, boolean eliminated) {
         if (map == null || id.equals(playerId)) return;
 
         LatLng pos = new LatLng(lat, lng);
-        //var icon = "dead" ? BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED:BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE;
+        BitmapDescriptor icon = getOtherPlayerIcon(eliminated);
 
         if (!otherPlayers.containsKey(id)) {
             Marker m = map.addMarker(new MarkerOptions()
                     .position(pos)
                     .title(name)
-                    .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)));
+                    .icon(icon));
 
             if (m != null) {
                 m.setVisible(uiVisible);
+                m.setAlpha(eliminated ? 0.8f : 1f);
             }
 
             otherPlayers.put(id, m);
@@ -758,8 +849,65 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             if (m != null) {
                 m.setPosition(pos);
                 m.setTitle(name);
+                m.setIcon(icon);
+                m.setAlpha(eliminated ? 0.8f : 1f);
                 m.setVisible(uiVisible);
             }
         }
+    }
+
+    private void sendEliminatedStateToServer(boolean eliminated) {
+        try {
+            JSONObject json = new JSONObject();
+            json.put("session_id", sessionId);
+            json.put("player_id", playerId);
+            json.put("is_eliminated", eliminated);
+
+            Request request = new Request.Builder()
+                    .url(BASE_URL + "/api/player/eliminated")
+                    .post(RequestBody.create(json.toString(), JSON))
+                    .build();
+
+            httpClient.newCall(request).enqueue(new Callback() {
+                @Override
+                public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                    e.printStackTrace();
+                    showWaitingForServerOnce();
+                }
+
+                @Override
+                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                    if (!response.isSuccessful()) {
+                        showWaitingForServerOnce();
+                    } else {
+                        markServerConnected();
+                    }
+                    response.close();
+                }
+            });
+        } catch (Exception e) {
+            e.printStackTrace();
+            showWaitingForServerOnce();
+        }
+    }
+
+    private void showWaitingForServerOnce() {
+        if (serverConnectionLost) return;
+
+        serverConnectionLost = true;
+
+        runOnUiThread(() ->
+                Toast.makeText(MapActivity.this, "Waiting for server…", Toast.LENGTH_SHORT).show()
+        );
+    }
+
+    private void markServerConnected() {
+        if (!serverConnectionLost) return;
+
+        serverConnectionLost = false;
+
+        runOnUiThread(() ->
+                Toast.makeText(MapActivity.this, "Connected to server", Toast.LENGTH_SHORT).show()
+        );
     }
 }
