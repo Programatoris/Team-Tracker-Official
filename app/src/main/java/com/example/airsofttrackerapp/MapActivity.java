@@ -740,6 +740,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         if (map == null || id.equals(playerId)) return;
 
         LatLng pos = new LatLng(lat, lng);
+        //var icon = "dead" ? BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED:BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE;
 
         if (!otherPlayers.containsKey(id)) {
             Marker m = map.addMarker(new MarkerOptions()
