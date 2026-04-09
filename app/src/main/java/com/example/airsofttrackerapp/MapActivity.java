@@ -2,6 +2,8 @@ package com.example.airsofttrackerapp;
 
 import android.Manifest;
 import android.app.AlertDialog;
+import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
@@ -9,9 +11,9 @@ import android.graphics.Color;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.location.Location;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
-import android.os.Looper;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
@@ -26,12 +28,10 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.content.res.AppCompatResources;
 import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import androidx.core.graphics.drawable.DrawableCompat;
 
 import com.google.android.gms.location.FusedLocationProviderClient;
-import com.google.android.gms.location.LocationCallback;
-import com.google.android.gms.location.LocationRequest;
-import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
@@ -61,38 +61,36 @@ import okhttp3.Callback;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
-import okhttp3.RequestBody;
 import okhttp3.Response;
 
 public class MapActivity extends AppCompatActivity implements OnMapReadyCallback {
 
     private static final int REQ_LOCATION = 1001;
+    private static final int REQ_BACKGROUND_LOCATION = 1002;
+    private static final int REQ_NOTIFICATIONS = 1003;
 
-    // ZMEN NA SVOJU FUNKCNU DOMENU / SUBDOMENU
+    private static final String PREFS_NAME = "airsoft_prefs";
+    private static final String PREF_PLAYER_ID = "player_id";
+
     private static final String BASE_URL = "https://rpi.mapairsofttracker.org";
-
     private static final MediaType JSON =
             MediaType.get("application/json; charset=utf-8");
 
-    // Map & GPS
     private GoogleMap map;
     private Marker pendingDeleteMarker = null;
     private FusedLocationProviderClient locationClient;
-    private LocationCallback locationCallback;
     private Location lastLocation;
 
     private Marker myMarker;
     private final Map<String, Marker> otherPlayers = new HashMap<>();
     private final List<Marker> customPins = new ArrayList<>();
 
-    // Networking
     private OkHttpClient httpClient;
     private Handler pollHandler;
     private String sessionId;
     private String playerId;
     private String playerName;
 
-    // UI
     private View pinPickerCard;
     private View overlayUi;
     private int selectedPinColor = Color.RED;
@@ -104,7 +102,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private TextView txtSessionId;
     private View btnLeave;
 
-    // State
     private boolean uiVisible = true;
     private boolean placingPin = false;
     private int selectedPinIconRes = 0;
@@ -136,7 +133,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             playerName = "Player";
         }
 
-        playerId = UUID.randomUUID().toString();
+        playerId = getOrCreatePlayerId();
 
         httpClient = new OkHttpClient.Builder()
                 .connectTimeout(5, TimeUnit.SECONDS)
@@ -145,6 +142,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                 .build();
 
         pollHandler = new Handler(getMainLooper());
+        locationClient = LocationServices.getFusedLocationProviderClient(this);
 
         bindViews();
         setupUI();
@@ -156,9 +154,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             mapFragment.getMapAsync(this);
         }
 
-        joinSessionHttp();
-        startPolling();
-        checkLocationPermission();
+        checkPermissionsAndStartTracking();
 
         View root = findViewById(android.R.id.content);
         root.setOnApplyWindowInsetsListener((v, insets) -> {
@@ -174,16 +170,41 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     }
 
     @Override
-    protected void onDestroy() {
-        super.onDestroy();
-
-        if (locationClient != null && locationCallback != null) {
-            locationClient.removeLocationUpdates(locationCallback);
+    protected void onResume() {
+        super.onResume();
+        if (pollHandler != null) {
+            pollHandler.removeCallbacksAndMessages(null);
+            pollHandler.post(pollRunnable);
         }
+    }
 
+    @Override
+    protected void onPause() {
+        super.onPause();
         if (pollHandler != null) {
             pollHandler.removeCallbacksAndMessages(null);
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (pollHandler != null) {
+            pollHandler.removeCallbacksAndMessages(null);
+        }
+        super.onDestroy();
+    }
+
+    private String getOrCreatePlayerId() {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        String saved = prefs.getString(PREF_PLAYER_ID, null);
+
+        if (saved != null && !saved.trim().isEmpty()) {
+            return saved;
+        }
+
+        String newId = UUID.randomUUID().toString();
+        prefs.edit().putString(PREF_PLAYER_ID, newId).apply();
+        return newId;
     }
 
     private void bindViews() {
@@ -260,7 +281,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     }
 
     private void enableFullscreen() {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             getWindow().setDecorFitsSystemWindows(false);
 
             WindowInsetsController controller = getWindow().getInsetsController();
@@ -298,7 +319,10 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             toggleSessionMenu();
         });
 
-        btnLeave.setOnClickListener(v -> finish());
+        btnLeave.setOnClickListener(v -> {
+            stopTrackingService();
+            finish();
+        });
 
         btnPlusPins.setOnClickListener(v -> {
             if (!uiVisible) return;
@@ -521,20 +545,43 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         return BitmapDescriptorFactory.fromBitmap(b);
     }
 
-    private void checkLocationPermission() {
-        if (ActivityCompat.checkSelfPermission(
-                this,
-                Manifest.permission.ACCESS_FINE_LOCATION
-        ) != PackageManager.PERMISSION_GRANTED) {
+    private void checkPermissionsAndStartTracking() {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
 
             ActivityCompat.requestPermissions(
                     this,
                     new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
                     REQ_LOCATION
             );
-        } else {
-            startLiveTracking();
+            return;
         }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(
+                        this,
+                        new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                        REQ_NOTIFICATIONS
+                );
+                return;
+            }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                    != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(
+                        this,
+                        new String[]{Manifest.permission.ACCESS_BACKGROUND_LOCATION},
+                        REQ_BACKGROUND_LOCATION
+                );
+                return;
+            }
+        }
+
+        startTrackingService();
     }
 
     @Override
@@ -543,144 +590,64 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                                            @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
-        if (requestCode == REQ_LOCATION
-                && grantResults.length > 0
-                && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            startLiveTracking();
-        }
-    }
-
-    private void startLiveTracking() {
-        locationClient = LocationServices.getFusedLocationProviderClient(this);
-
-        LocationRequest request = LocationRequest.create()
-                .setInterval(1000)
-                .setFastestInterval(500)
-                .setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
-
-        locationCallback = new LocationCallback() {
-            @Override
-            public void onLocationResult(@NonNull LocationResult result) {
-                Location loc = result.getLastLocation();
-                if (loc == null || map == null) return;
-
-                lastLocation = loc;
-                LatLng pos = new LatLng(loc.getLatitude(), loc.getLongitude());
-
-                if (myMarker == null) {
-                    myMarker = map.addMarker(new MarkerOptions()
-                            .position(pos)
-                            .title("Me")
-                            .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE)));
-                    map.moveCamera(CameraUpdateFactory.newLatLngZoom(pos, 17f));
-                } else {
-                    myMarker.setPosition(pos);
-                }
-
-                if (myMarker != null) {
-                    myMarker.setVisible(uiVisible);
-                }
-
-                sendLocation(loc.getLatitude(), loc.getLongitude());
+        if (requestCode == REQ_LOCATION) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                checkPermissionsAndStartTracking();
             }
-        };
-
-        if (ActivityCompat.checkSelfPermission(
-                this,
-                Manifest.permission.ACCESS_FINE_LOCATION
-        ) != PackageManager.PERMISSION_GRANTED) {
             return;
         }
 
-        locationClient.requestLocationUpdates(
-                request,
-                locationCallback,
-                Looper.getMainLooper()
-        );
+        if (requestCode == REQ_NOTIFICATIONS) {
+            checkPermissionsAndStartTracking();
+            return;
+        }
+
+        if (requestCode == REQ_BACKGROUND_LOCATION) {
+            startTrackingService();
+        }
+    }
+
+    private void startTrackingService() {
+        Intent intent = new Intent(this, TrackingService.class);
+        intent.setAction(TrackingService.ACTION_START);
+        intent.putExtra(TrackingService.EXTRA_SESSION_ID, sessionId);
+        intent.putExtra(TrackingService.EXTRA_PLAYER_NAME, playerName);
+
+        ContextCompat.startForegroundService(this, intent);
+    }
+
+    private void stopTrackingService() {
+        Intent intent = new Intent(this, TrackingService.class);
+        intent.setAction(TrackingService.ACTION_STOP);
+        startService(intent);
     }
 
     private void centerMapOnMe() {
         if (map == null) return;
 
-        if (lastLocation != null) {
-            LatLng me = new LatLng(lastLocation.getLatitude(), lastLocation.getLongitude());
-            map.animateCamera(CameraUpdateFactory.newLatLngZoom(me, 17f));
-        } else if (myMarker != null) {
-            map.animateCamera(CameraUpdateFactory.newLatLngZoom(myMarker.getPosition(), 17f));
-        } else {
-            Toast.makeText(this, "Waiting for GPS…", Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    private void startPolling() {
-        if (pollHandler != null) {
-            pollHandler.post(pollRunnable);
-        }
-    }
-
-    private void joinSessionHttp() {
         try {
-            JSONObject json = new JSONObject();
-            json.put("session_id", sessionId);
-            json.put("player_id", playerId);
-            json.put("player_name", playerName);
+            locationClient.getLastLocation().addOnSuccessListener(loc -> {
+                if (loc != null) {
+                    lastLocation = loc;
+                    LatLng me = new LatLng(loc.getLatitude(), loc.getLongitude());
 
-            RequestBody body = RequestBody.create(json.toString(), JSON);
+                    if (myMarker == null) {
+                        myMarker = map.addMarker(new MarkerOptions()
+                                .position(me)
+                                .title("Me")
+                                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE)));
+                    } else {
+                        myMarker.setPosition(me);
+                    }
 
-            Request request = new Request.Builder()
-                    .url(BASE_URL + "/api/session/join")
-                    .post(body)
-                    .build();
-
-            httpClient.newCall(request).enqueue(new Callback() {
-                @Override
-                public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                    e.printStackTrace();
-                    runOnUiThread(() ->
-                            Toast.makeText(MapActivity.this, "Join failed", Toast.LENGTH_SHORT).show()
-                    );
-                }
-
-                @Override
-                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                    response.close();
+                    map.animateCamera(CameraUpdateFactory.newLatLngZoom(me, 17f));
+                } else if (myMarker != null) {
+                    map.animateCamera(CameraUpdateFactory.newLatLngZoom(myMarker.getPosition(), 17f));
+                } else {
+                    Toast.makeText(this, "Waiting for GPS…", Toast.LENGTH_SHORT).show();
                 }
             });
-
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void sendLocation(double lat, double lng) {
-        try {
-            JSONObject json = new JSONObject();
-            json.put("session_id", sessionId);
-            json.put("player_id", playerId);
-            json.put("player_name", playerName);
-            json.put("lat", lat);
-            json.put("lng", lng);
-
-            RequestBody body = RequestBody.create(json.toString(), JSON);
-
-            Request request = new Request.Builder()
-                    .url(BASE_URL + "/api/location/update")
-                    .post(body)
-                    .build();
-
-            httpClient.newCall(request).enqueue(new Callback() {
-                @Override
-                public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                    e.printStackTrace();
-                }
-
-                @Override
-                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                    response.close();
-                }
-            });
-
-        } catch (Exception e) {
+        } catch (SecurityException e) {
             e.printStackTrace();
         }
     }
