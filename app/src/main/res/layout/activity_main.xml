@@ -115,7 +115,7 @@
         android:id="@+id/tvVersion"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Build version: v1.11"
+        android:text="Build version: v1.12"
         android:textColor="#CCFFFFFF"
         android:textSize="14sp"
         android:letterSpacing="0.02"

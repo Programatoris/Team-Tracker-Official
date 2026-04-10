@@ -81,6 +81,8 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private static final int COLOR_ELIMINATED = Color.parseColor("#D62828");
     private static final int COLOR_DEFAULT_CHIP = Color.parseColor("#354e46");
 
+    private static final int CUSTOM_PIN_SIZE_DP = 34;
+
     private GoogleMap map;
     private Marker pendingDeleteMarker = null;
     private FusedLocationProviderClient locationClient;
@@ -88,7 +90,10 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
     private Marker myMarker;
     private final Map<String, Marker> otherPlayers = new HashMap<>();
-    private final List<Marker> customPins = new ArrayList<>();
+
+    // server-synced custom pins
+    private final Map<String, Marker> customPins = new HashMap<>();
+    private final Map<Marker, String> customPinIdsByMarker = new HashMap<>();
 
     private OkHttpClient httpClient;
     private Handler pollHandler;
@@ -113,6 +118,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private boolean uiVisible = true;
     private boolean placingPin = false;
     private int selectedPinIconRes = 0;
+    private String selectedPinIconKey = null;
     private boolean sessionMenuExpanded = false;
     private boolean isEliminated = false;
     private boolean serverConnectionLost = false;
@@ -123,6 +129,8 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         @Override
         public void run() {
             fetchOtherPlayers();
+            fetchCustomPins();
+
             if (pollHandler != null) {
                 pollHandler.postDelayed(this, 1000);
             }
@@ -268,7 +276,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         map.getUiSettings().setIndoorLevelPickerEnabled(false);
 
         map.setOnMarkerClickListener(marker -> {
-            if (customPins.contains(marker)) {
+            if (customPinIdsByMarker.containsKey(marker)) {
                 marker.showInfoWindow();
                 pendingDeleteMarker = marker;
                 return true;
@@ -277,7 +285,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         });
 
         map.setOnInfoWindowLongClickListener(marker -> {
-            if (!customPins.contains(marker)) return;
+            if (!customPinIdsByMarker.containsKey(marker)) return;
 
             new AlertDialog.Builder(this, R.style.GreenDialogTheme)
                     .setTitle("Delete pin?")
@@ -290,12 +298,11 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
     private void deleteCustomPin(Marker marker) {
         if (marker == null) return;
-        marker.remove();
-        customPins.remove(marker);
 
-        if (pendingDeleteMarker == marker) {
-            pendingDeleteMarker = null;
-        }
+        String pinId = customPinIdsByMarker.get(marker);
+        if (pinId == null || pinId.trim().isEmpty()) return;
+
+        deleteCustomPinFromServer(pinId);
     }
 
     private void enableFullscreen() {
@@ -326,10 +333,10 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             applyMarkersVisibility(uiVisible);
 
             if (!uiVisible) {
-                placingPin = false;
                 hidePinPicker();
                 sessionMenuExpanded = false;
                 applySessionMenuState(false);
+                resetSelectedPinState();
             }
         });
 
@@ -360,12 +367,12 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             sendEliminatedStateToServer(isEliminated);
         });
 
-        pinHouse.setOnClickListener(v -> startPlacingPin((ImageButton) v, R.drawable.ic_pin_house));
-        pinFlag.setOnClickListener(v -> startPlacingPin((ImageButton) v, R.drawable.ic_pin_flag));
-        pinStar.setOnClickListener(v -> startPlacingPin((ImageButton) v, R.drawable.ic_pin_star));
-        pinSkull.setOnClickListener(v -> startPlacingPin((ImageButton) v, R.drawable.ic_pin_skull));
-        pinTarget.setOnClickListener(v -> startPlacingPin((ImageButton) v, R.drawable.ic_pin_target));
-        pinPlus.setOnClickListener(v -> startPlacingPin((ImageButton) v, R.drawable.ic_pin_plus));
+        pinHouse.setOnClickListener(v -> startPlacingPin((ImageButton) v, R.drawable.ic_pin_house, "house"));
+        pinFlag.setOnClickListener(v -> startPlacingPin((ImageButton) v, R.drawable.ic_pin_flag, "flag"));
+        pinStar.setOnClickListener(v -> startPlacingPin((ImageButton) v, R.drawable.ic_pin_star, "star"));
+        pinSkull.setOnClickListener(v -> startPlacingPin((ImageButton) v, R.drawable.ic_pin_skull, "skull"));
+        pinTarget.setOnClickListener(v -> startPlacingPin((ImageButton) v, R.drawable.ic_pin_target, "target"));
+        pinPlus.setOnClickListener(v -> startPlacingPin((ImageButton) v, R.drawable.ic_pin_plus, "plus"));
 
         hidePinPicker();
         sessionMenuExpanded = false;
@@ -381,10 +388,11 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         sessionCard.setVisibility(expanded ? View.VISIBLE : View.GONE);
     }
 
-    private void startPlacingPin(ImageButton button, int iconRes) {
+    private void startPlacingPin(ImageButton button, int iconRes, String iconKey) {
         if (!uiVisible) return;
 
         selectedPinIconRes = iconRes;
+        selectedPinIconKey = iconKey;
         placingPin = true;
 
         clearPinSelectionHighlight();
@@ -415,6 +423,13 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         }
     }
 
+    private void resetSelectedPinState() {
+        clearPinSelectionHighlight();
+        selectedPinIconKey = null;
+        selectedPinIconRes = 0;
+        placingPin = false;
+    }
+
     private void togglePinPicker() {
         if (pinPickerCard.getVisibility() == View.VISIBLE) {
             hidePinPicker();
@@ -429,7 +444,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
     private void hidePinPicker() {
         pinPickerCard.setVisibility(View.GONE);
-        clearPinSelectionHighlight();
     }
 
     private void applyUiVisibility(boolean visible) {
@@ -441,16 +455,18 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             hidePinPicker();
             sessionMenuExpanded = false;
             applySessionMenuState(false);
-            placingPin = false;
+            resetSelectedPinState();
         }
     }
 
     private void applyMarkersVisibility(boolean visible) {
         if (myMarker != null) myMarker.setVisible(visible);
+
         for (Marker m : otherPlayers.values()) {
             if (m != null) m.setVisible(visible);
         }
-        for (Marker m : customPins) {
+
+        for (Marker m : customPins.values()) {
             if (m != null) m.setVisible(visible);
         }
     }
@@ -585,23 +601,14 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
                     selectedPinColor = chosenColor[0];
 
-                    int pinSizeDp = 34;
-                    Marker m = map.addMarker(new MarkerOptions()
-                            .position(pos)
-                            .title(name)
-                            .icon(tintedPinIcon(selectedPinIconRes, selectedPinColor, pinSizeDp))
-                            .anchor(0.5f, 1.0f)
-                            .flat(false)
-                    );
-
-                    if (m != null) {
-                        m.setVisible(uiVisible);
-                        customPins.add(m);
+                    if (selectedPinIconKey == null || selectedPinIconKey.trim().isEmpty()) {
+                        selectedPinIconKey = "flag";
                     }
 
-                    clearPinSelectionHighlight();
+                    addCustomPinToServer(name, pos, selectedPinIconKey, selectedPinColor);
+                    resetSelectedPinState();
                 })
-                .setNegativeButton("Cancel", (d, w) -> clearPinSelectionHighlight())
+                .setNegativeButton("Cancel", (d, w) -> resetSelectedPinState())
                 .show();
     }
 
@@ -628,6 +635,27 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         d.draw(c);
 
         return BitmapDescriptorFactory.fromBitmap(b);
+    }
+
+    private int iconKeyToDrawableRes(String iconKey) {
+        if (iconKey == null) return R.drawable.ic_pin_flag;
+
+        switch (iconKey) {
+            case "house":
+                return R.drawable.ic_pin_house;
+            case "flag":
+                return R.drawable.ic_pin_flag;
+            case "star":
+                return R.drawable.ic_pin_star;
+            case "skull":
+                return R.drawable.ic_pin_skull;
+            case "target":
+                return R.drawable.ic_pin_target;
+            case "plus":
+                return R.drawable.ic_pin_plus;
+            default:
+                return R.drawable.ic_pin_flag;
+        }
     }
 
     private void checkPermissionsAndStartTracking() {
@@ -800,6 +828,60 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         }
     }
 
+    private void fetchCustomPins() {
+        try {
+            String url = BASE_URL
+                    + "/api/pins?session_id="
+                    + URLEncoder.encode(sessionId, StandardCharsets.UTF_8.toString());
+
+            Request request = new Request.Builder()
+                    .url(url)
+                    .get()
+                    .build();
+
+            httpClient.newCall(request).enqueue(new Callback() {
+                @Override
+                public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                    e.printStackTrace();
+                    showWaitingForServerOnce();
+                }
+
+                @Override
+                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                    if (!response.isSuccessful()) {
+                        response.close();
+                        showWaitingForServerOnce();
+                        return;
+                    }
+
+                    String body = response.body() != null ? response.body().string() : "";
+                    response.close();
+
+                    try {
+                        JSONObject root = new JSONObject(body);
+                        JSONArray arr = root.getJSONArray("pins");
+
+                        markServerConnected();
+
+                        runOnUiThread(() -> {
+                            try {
+                                syncCustomPins(arr);
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                            }
+                        });
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        showWaitingForServerOnce();
+                    }
+                }
+            });
+        } catch (Exception e) {
+            e.printStackTrace();
+            showWaitingForServerOnce();
+        }
+    }
+
     private void syncPlayers(JSONArray arr) throws Exception {
         if (map == null) return;
 
@@ -833,6 +915,30 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         }
     }
 
+    private void syncCustomPins(JSONArray arr) throws Exception {
+        if (map == null) return;
+
+        Map<String, Boolean> seen = new HashMap<>();
+
+        for (int i = 0; i < arr.length(); i++) {
+            JSONObject pin = arr.getJSONObject(i);
+            String pinId = pin.getString("pin_id");
+            seen.put(pinId, true);
+            upsertCustomPin(pin);
+        }
+
+        List<String> toRemove = new ArrayList<>();
+        for (String pinId : customPins.keySet()) {
+            if (!seen.containsKey(pinId)) {
+                toRemove.add(pinId);
+            }
+        }
+
+        for (String pinId : toRemove) {
+            removeCustomPinLocally(pinId);
+        }
+    }
+
     private void updateOtherPlayer(String id, String name, double lat, double lng, boolean eliminated) {
         if (map == null || id.equals(playerId)) return;
 
@@ -860,6 +966,152 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                 m.setAlpha(eliminated ? 0.8f : 1f);
                 m.setVisible(uiVisible);
             }
+        }
+    }
+
+    private void upsertCustomPin(JSONObject pin) throws Exception {
+        if (map == null) return;
+
+        String pinId = pin.getString("pin_id");
+        String title = pin.optString("title", "Pin");
+        double lat = pin.getDouble("lat");
+        double lng = pin.getDouble("lng");
+        String iconKey = pin.optString("icon_key", "flag");
+        int color = pin.optInt("color", Color.RED);
+
+        int drawableRes = iconKeyToDrawableRes(iconKey);
+        LatLng pos = new LatLng(lat, lng);
+        BitmapDescriptor icon = tintedPinIcon(drawableRes, color, CUSTOM_PIN_SIZE_DP);
+
+        Marker existing = customPins.get(pinId);
+
+        if (existing == null) {
+            Marker m = map.addMarker(new MarkerOptions()
+                    .position(pos)
+                    .title(title)
+                    .icon(icon)
+                    .anchor(0.5f, 1.0f)
+                    .flat(false));
+
+            if (m != null) {
+                m.setVisible(uiVisible);
+                customPins.put(pinId, m);
+                customPinIdsByMarker.put(m, pinId);
+            }
+        } else {
+            existing.setPosition(pos);
+            existing.setTitle(title);
+            existing.setIcon(icon);
+            existing.setVisible(uiVisible);
+        }
+    }
+
+    private void addCustomPinToServer(String title, LatLng pos, String iconKey, int color) {
+        try {
+            JSONObject json = new JSONObject();
+            json.put("session_id", sessionId);
+            json.put("player_id", playerId);
+            json.put("title", title);
+            json.put("lat", pos.latitude);
+            json.put("lng", pos.longitude);
+            json.put("icon_key", iconKey);
+            json.put("color", color);
+
+            Request request = new Request.Builder()
+                    .url(BASE_URL + "/api/pin/add")
+                    .post(RequestBody.create(json.toString(), JSON))
+                    .build();
+
+            httpClient.newCall(request).enqueue(new Callback() {
+                @Override
+                public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                    e.printStackTrace();
+                    showWaitingForServerOnce();
+                }
+
+                @Override
+                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                    if (!response.isSuccessful()) {
+                        response.close();
+                        showWaitingForServerOnce();
+                        return;
+                    }
+
+                    String body = response.body() != null ? response.body().string() : "";
+                    response.close();
+
+                    try {
+                        JSONObject root = new JSONObject(body);
+                        JSONObject pin = root.getJSONObject("pin");
+
+                        markServerConnected();
+
+                        runOnUiThread(() -> {
+                            try {
+                                upsertCustomPin(pin);
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                            }
+                        });
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        showWaitingForServerOnce();
+                    }
+                }
+            });
+        } catch (Exception e) {
+            e.printStackTrace();
+            showWaitingForServerOnce();
+        }
+    }
+
+    private void deleteCustomPinFromServer(String pinId) {
+        try {
+            JSONObject json = new JSONObject();
+            json.put("session_id", sessionId);
+            json.put("pin_id", pinId);
+
+            Request request = new Request.Builder()
+                    .url(BASE_URL + "/api/pin/delete")
+                    .post(RequestBody.create(json.toString(), JSON))
+                    .build();
+
+            httpClient.newCall(request).enqueue(new Callback() {
+                @Override
+                public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                    e.printStackTrace();
+                    showWaitingForServerOnce();
+                }
+
+                @Override
+                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                    if (!response.isSuccessful()) {
+                        response.close();
+                        showWaitingForServerOnce();
+                        return;
+                    }
+
+                    response.close();
+                    markServerConnected();
+
+                    runOnUiThread(() -> removeCustomPinLocally(pinId));
+                }
+            });
+        } catch (Exception e) {
+            e.printStackTrace();
+            showWaitingForServerOnce();
+        }
+    }
+
+    private void removeCustomPinLocally(String pinId) {
+        Marker marker = customPins.remove(pinId);
+        if (marker != null) {
+            customPinIdsByMarker.remove(marker);
+            marker.remove();
+        }
+
+        if (pendingDeleteMarker == marker) {
+            pendingDeleteMarker = null;
         }
     }
 

@@ -10,14 +10,14 @@ android {
 
     defaultConfig {
         applicationId = "com.example.airsofttrackerapp"
-        minSdk = 31
+        minSdk = 24
         targetSdk = 36
         versionCode = 1
-        versionName = "1.11"
+        versionName = "1.12"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        manifestPlaceholders["MAPS_API_KEY"] = "<-- Insert Your API KEY here -->"
+        manifestPlaceholders["MAPS_API_KEY"] = "<-- Paste your API KEY here -->"
     }
 
     buildTypes {

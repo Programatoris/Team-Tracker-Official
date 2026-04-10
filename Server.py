@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import time
+import uuid
 from flask import Flask, g, request, jsonify
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -44,8 +45,25 @@ def init_db():
         FOREIGN KEY(session_id) REFERENCES sessions(session_id)
     );
 
+    CREATE TABLE IF NOT EXISTS pins (
+        pin_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        created_by_player_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        lat REAL NOT NULL,
+        lng REAL NOT NULL,
+        icon_key TEXT NOT NULL,
+        color INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY(session_id) REFERENCES sessions(session_id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_players_session_id ON players(session_id);
     CREATE INDEX IF NOT EXISTS idx_players_updated_at ON players(updated_at);
+
+    CREATE INDEX IF NOT EXISTS idx_pins_session_id ON pins(session_id);
+    CREATE INDEX IF NOT EXISTS idx_pins_created_by ON pins(created_by_player_id);
     """)
 
     cols = conn.execute("PRAGMA table_info(players)").fetchall()
@@ -76,6 +94,13 @@ def cleanup_inactive_data(db, timeout_seconds=120):
         DELETE FROM sessions
         WHERE session_id NOT IN (
             SELECT DISTINCT session_id FROM players
+        )
+    """)
+
+    db.execute("""
+        DELETE FROM pins
+        WHERE session_id NOT IN (
+            SELECT session_id FROM sessions
         )
     """)
 
@@ -266,6 +291,141 @@ def update_eliminated():
 
     db.commit()
     return jsonify({"ok": True, "is_eliminated": is_eliminated})
+
+
+@app.route("/api/pin/add", methods=["POST"])
+def add_pin():
+    data = request.get_json(force=True)
+
+    session_id = (data.get("session_id") or "").strip()
+    player_id = (data.get("player_id") or "").strip()
+    title = (data.get("title") or "").strip()
+    icon_key = (data.get("icon_key") or "").strip()
+    lat = data.get("lat")
+    lng = data.get("lng")
+    color = data.get("color")
+
+    if not session_id or not player_id or not title or not icon_key:
+        return jsonify({"ok": False, "error": "missing fields"}), 400
+
+    if lat is None or lng is None or color is None:
+        return jsonify({"ok": False, "error": "missing lat/lng/color"}), 400
+
+    db = get_db()
+    cleanup_inactive_data(db, 120)
+
+    session_exists = db.execute("""
+        SELECT session_id
+        FROM sessions
+        WHERE session_id = ?
+        LIMIT 1
+    """, (session_id,)).fetchone()
+
+    if session_exists is None:
+        return jsonify({"ok": False, "error": "session does not exist"}), 404
+
+    player_exists = db.execute("""
+        SELECT player_id
+        FROM players
+        WHERE session_id = ? AND player_id = ?
+        LIMIT 1
+    """, (session_id, player_id)).fetchone()
+
+    if player_exists is None:
+        return jsonify({"ok": False, "error": "player not in session"}), 404
+
+    pin_id = str(uuid.uuid4())
+    now = int(time.time())
+
+    db.execute("""
+        INSERT INTO pins(
+            pin_id, session_id, created_by_player_id, title,
+            lat, lng, icon_key, color, created_at, updated_at
+        )
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        pin_id, session_id, player_id, title,
+        float(lat), float(lng), icon_key, int(color), now, now
+    ))
+
+    db.commit()
+
+    return jsonify({
+        "ok": True,
+        "pin": {
+            "pin_id": pin_id,
+            "session_id": session_id,
+            "created_by_player_id": player_id,
+            "title": title,
+            "lat": float(lat),
+            "lng": float(lng),
+            "icon_key": icon_key,
+            "color": int(color),
+            "created_at": now,
+            "updated_at": now
+        }
+    })
+
+
+@app.route("/api/pin/delete", methods=["POST"])
+def delete_pin():
+    data = request.get_json(force=True)
+
+    session_id = (data.get("session_id") or "").strip()
+    pin_id = (data.get("pin_id") or "").strip()
+
+    if not session_id or not pin_id:
+        return jsonify({"ok": False, "error": "missing fields"}), 400
+
+    db = get_db()
+    cleanup_inactive_data(db, 120)
+
+    cur = db.execute("""
+        DELETE FROM pins
+        WHERE session_id = ? AND pin_id = ?
+    """, (session_id, pin_id))
+
+    if cur.rowcount == 0:
+        return jsonify({"ok": False, "error": "pin not found"}), 404
+
+    db.commit()
+    return jsonify({"ok": True, "pin_id": pin_id})
+
+
+@app.route("/api/pins", methods=["GET"])
+def get_pins():
+    session_id = (request.args.get("session_id") or "").strip()
+
+    if not session_id:
+        return jsonify({"ok": False, "error": "missing session_id"}), 400
+
+    db = get_db()
+    cleanup_inactive_data(db, 120)
+
+    rows = db.execute("""
+        SELECT pin_id, session_id, created_by_player_id, title,
+               lat, lng, icon_key, color, created_at, updated_at
+        FROM pins
+        WHERE session_id = ?
+        ORDER BY created_at ASC
+    """, (session_id,)).fetchall()
+
+    pins = []
+    for row in rows:
+        pins.append({
+            "pin_id": row["pin_id"],
+            "session_id": row["session_id"],
+            "created_by_player_id": row["created_by_player_id"],
+            "title": row["title"],
+            "lat": row["lat"],
+            "lng": row["lng"],
+            "icon_key": row["icon_key"],
+            "color": row["color"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"]
+        })
+
+    return jsonify({"ok": True, "pins": pins})
 
 
 @app.route("/api/locations", methods=["GET"])
