@@ -238,7 +238,7 @@ public class TrackingService extends Service {
 
     private Notification buildNotification(String sessionId, String playerName) {
         return new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("Airsoft Tracker running")
+                .setContentTitle("Team Tracker running")
                 .setContentText("Session: " + sessionId + " | " + playerName)
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setOngoing(true)

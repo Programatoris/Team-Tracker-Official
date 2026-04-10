@@ -128,6 +128,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private final Runnable pollRunnable = new Runnable() {
         @Override
         public void run() {
+            fetchMyPlayerState();
             fetchOtherPlayers();
             fetchCustomPins();
 
@@ -194,6 +195,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     @Override
     protected void onResume() {
         super.onResume();
+        fetchMyPlayerState();
         if (pollHandler != null) {
             pollHandler.removeCallbacksAndMessages(null);
             pollHandler.post(pollRunnable);
@@ -813,6 +815,63 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                             } catch (Exception e) {
                                 e.printStackTrace();
                             }
+                        });
+
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        showWaitingForServerOnce();
+                    }
+                }
+            });
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            showWaitingForServerOnce();
+        }
+    }
+
+    private void fetchMyPlayerState() {
+        try {
+            String url = BASE_URL
+                    + "/api/player/state?session_id="
+                    + URLEncoder.encode(sessionId, StandardCharsets.UTF_8.toString())
+                    + "&player_id="
+                    + URLEncoder.encode(playerId, StandardCharsets.UTF_8.toString());
+
+            Request request = new Request.Builder()
+                    .url(url)
+                    .get()
+                    .build();
+
+            httpClient.newCall(request).enqueue(new Callback() {
+                @Override
+                public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                    e.printStackTrace();
+                    showWaitingForServerOnce();
+                }
+
+                @Override
+                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                    if (!response.isSuccessful()) {
+                        response.close();
+                        showWaitingForServerOnce();
+                        return;
+                    }
+
+                    String body = response.body() != null ? response.body().string() : "";
+                    response.close();
+
+                    try {
+                        JSONObject root = new JSONObject(body);
+                        JSONObject player = root.getJSONObject("player");
+                        boolean eliminated = player.optBoolean("is_eliminated", false);
+
+                        markServerConnected();
+
+                        runOnUiThread(() -> {
+                            isEliminated = eliminated;
+                            applyEliminatedButtonState();
+                            updateMyMarkerAppearance();
                         });
 
                     } catch (Exception e) {

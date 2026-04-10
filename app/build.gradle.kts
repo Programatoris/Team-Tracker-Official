@@ -13,11 +13,11 @@ android {
         minSdk = 24
         targetSdk = 36
         versionCode = 1
-        versionName = "1.12"
+        versionName = "1.12.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        manifestPlaceholders["MAPS_API_KEY"] = "<-- Paste your API KEY here -->"
+        manifestPlaceholders["MAPS_API_KEY"] = "<-- Insert your API KEY here -->"
     }
 
     buildTypes {

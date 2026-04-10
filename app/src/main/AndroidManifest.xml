@@ -25,14 +25,17 @@
 
         <activity
             android:name=".MapActivity"
+            android:screenOrientation="sensorLandscape"
             android:exported="false" />
 
         <activity
             android:name=".SessionActivity"
+            android:screenOrientation="sensorLandscape"
             android:exported="false" />
 
         <activity
             android:name=".MainActivity"
+            android:screenOrientation="sensorLandscape"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

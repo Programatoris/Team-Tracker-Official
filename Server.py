@@ -293,6 +293,41 @@ def update_eliminated():
     return jsonify({"ok": True, "is_eliminated": is_eliminated})
 
 
+@app.route("/api/player/state", methods=["GET"])
+def get_player_state():
+    session_id = (request.args.get("session_id") or "").strip()
+    player_id = (request.args.get("player_id") or "").strip()
+
+    if not session_id or not player_id:
+        return jsonify({"ok": False, "error": "missing session_id or player_id"}), 400
+
+    db = get_db()
+    cleanup_inactive_data(db, 120)
+
+    row = db.execute("""
+        SELECT player_id, session_id, player_name, lat, lng, updated_at, is_eliminated
+        FROM players
+        WHERE session_id = ? AND player_id = ?
+        LIMIT 1
+    """, (session_id, player_id)).fetchone()
+
+    if row is None:
+        return jsonify({"ok": False, "error": "player not found"}), 404
+
+    return jsonify({
+        "ok": True,
+        "player": {
+            "player_id": row["player_id"],
+            "session_id": row["session_id"],
+            "player_name": row["player_name"],
+            "lat": row["lat"],
+            "lng": row["lng"],
+            "updated_at": row["updated_at"],
+            "is_eliminated": bool(row["is_eliminated"])
+        }
+    })
+
+
 @app.route("/api/pin/add", methods=["POST"])
 def add_pin():
     data = request.get_json(force=True)
