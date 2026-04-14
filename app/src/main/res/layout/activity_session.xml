@@ -34,14 +34,15 @@
             android:id="@+id/tvTeam"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:letterSpacing="0.02"
             android:text="Team selection"
+            android:textAlignment="center"
             android:textColor="#FFFFFF"
             android:textSize="32sp"
             android:textStyle="bold"
-            android:letterSpacing="0.02"
-            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"/>
+            app:layout_constraintTop_toTopOf="parent" />
 
         <!-- small subtitle (optional but helps fill space) -->
         <TextView
@@ -50,26 +51,27 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:text="Join an existing session or host a new one."
+            android:textAlignment="center"
             android:textColor="#CCFFFFFF"
             android:textSize="14sp"
-            app:layout_constraintTop_toBottomOf="@id/tvTeam"
+            app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"/>
+            app:layout_constraintTop_toBottomOf="@id/tvTeam" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnJoin"
-            android:layout_width="0dp"
-            android:layout_height="48dp"
+            android:layout_width="184dp"
+            android:layout_height="46dp"
             android:layout_marginTop="28dp"
+            android:backgroundTint="#F5A623"
             android:text="Join"
             android:textAllCaps="false"
-            android:textStyle="bold"
-            android:backgroundTint="#F5A623"
             android:textColor="#1E1E1E"
+            android:textStyle="bold"
             app:cornerRadius="24dp"
-            app:layout_constraintTop_toBottomOf="@id/tvTeamSub"
+            app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"/>
+            app:layout_constraintTop_toBottomOf="@id/tvTeamSub" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnHost"
@@ -92,11 +94,12 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:text="Tip: Hosting creates a Session ID you can share."
+            android:textAlignment="center"
             android:textColor="#99FFFFFF"
             android:textSize="12sp"
             app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"/>
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent" />
     </androidx.constraintlayout.widget.ConstraintLayout>
 
     <!-- RIGHT PANEL -->
